@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "52QjYY8HSru1cnzL0lASU0Q0OSYR+l19/yIKfBn+r4w=",
+  "Source": "BlackOutChatServer",
+  "BasePath": "_content/BlackOutChatServer",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
