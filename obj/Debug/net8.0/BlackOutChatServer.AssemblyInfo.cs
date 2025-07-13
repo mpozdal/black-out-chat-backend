@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BlackOutChatServer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7bee1571b2839e984c6e6abc7638aa822aba549c")]
 [assembly: System.Reflection.AssemblyProductAttribute("BlackOutChatServer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BlackOutChatServer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

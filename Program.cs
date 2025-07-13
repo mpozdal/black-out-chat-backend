@@ -3,65 +3,120 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
-var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
-
-app.UseWebSockets();
-
-var clients = new ConcurrentBag<WebSocket>();
-
-app.Map("/ws", async (HttpContext context) =>
+namespace BlackOutChatServer
 {
-    if (context.WebSockets.IsWebSocketRequest)
+    public class Program
     {
-        var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-        clients.Add(webSocket);
-        Console.WriteLine("Client connected");
+        record ChatMessage(string user, string text, string clientId, long Timestamp, long ExpiresAt);
 
-        var buffer = new byte[1024 * 4];
-
-        try
+        public static void Main(string[] args)
         {
-            while (true)
-            {
-                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            var builder = WebApplication.CreateBuilder(args);
+            var app = builder.Build();
 
-                if (result.MessageType == WebSocketMessageType.Close)
+            app.UseWebSockets();
+
+            var clients = new ConcurrentBag<WebSocket>();
+            var messages = new ConcurrentQueue<ChatMessage>();
+
+            app.Map("/ws", async (HttpContext context) =>
+            {
+                if (!context.WebSockets.IsWebSocketRequest)
                 {
-                    Console.WriteLine("Client disconnected");
-                    break;
+                    context.Response.StatusCode = 400;
+                    return;
                 }
 
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                Console.WriteLine($"Received: {message}");
+                var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+                clients.Add(webSocket);
+                Console.WriteLine("Client connected");
 
-                // Rozsyłanie do wszystkich klientów
-                foreach (var client in clients)
+                var buffer = new byte[1024 * 4];
+
+                try
                 {
-                    if (client.State == WebSocketState.Open)
+                    // Wyślij aktywne wiadomości po połączeniu
+                    var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    var activeMessages = messages.Where(m => m.ExpiresAt > now).ToList();
+
+                    foreach (var msg in activeMessages)
                     {
-                        var data = Encoding.UTF8.GetBytes(message);
-                        await client.SendAsync(new ArraySegment<byte>(data), WebSocketMessageType.Text, true, CancellationToken.None);
+                        var json = JsonSerializer.Serialize(msg);
+                        var data = Encoding.UTF8.GetBytes(json);
+                        await webSocket.SendAsync(new ArraySegment<byte>(data), WebSocketMessageType.Text, true, CancellationToken.None);
+                    }
+
+                    // Obsługa nowej wiadomości
+                    while (true)
+                    {
+                        var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            Console.WriteLine("Client disconnected");
+                            break;
+                        }
+
+                        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        //Console.WriteLine($"Received: {message}");
+
+                        var incoming = JsonSerializer.Deserialize<ChatMessage>(message);
+
+                        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        var msg = new ChatMessage(
+                            user: incoming!.user,
+                            clientId: incoming.clientId,
+                            text: incoming.text,
+                            Timestamp: nowMs,
+                            ExpiresAt: nowMs + 15000
+                        );
+
+                        messages.Enqueue(msg);
+
+                        var json = JsonSerializer.Serialize(msg);
+                        var data = Encoding.UTF8.GetBytes(json);
+
+                        foreach (var client in clients)
+                        {
+                            if (client.State == WebSocketState.Open)
+                            {
+                                await client.SendAsync(new ArraySegment<byte>(data), WebSocketMessageType.Text, true, CancellationToken.None);
+                            }
+                        }
                     }
                 }
-            }
-        }
-        catch
-        {
-            Console.WriteLine("Client forcibly disconnected");
-        }
-        finally
-        {
-            // Nie można usunąć z ConcurrentBag, ale stan i tak będzie zamknięty
-            if (webSocket.State != WebSocketState.Closed)
-                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
-        }
-    }
-    else
-    {
-        context.Response.StatusCode = 400;
-    }
-});
+                catch
+                {
+                    Console.WriteLine("Client forcibly disconnected");
+                }
+                finally
+                {
+                    if (webSocket.State != WebSocketState.Closed)
+                        await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+                }
+            });
 
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
-app.Run($"http://0.0.0.0:{port}");
+            // (Opcjonalnie) czyść wygasłe wiadomości co minutę
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(60000);
+                    var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    var fresh = new ConcurrentQueue<ChatMessage>(
+                        messages.Where(m => m.ExpiresAt > now)
+                    );
+
+                    while (messages.TryDequeue(out _)) { }
+                    foreach (var msg in fresh)
+                        messages.Enqueue(msg);
+
+                    Console.WriteLine("Expired messages cleared");
+                }
+            });
+
+            var port = Environment.GetEnvironmentVariable("PORT") ?? "5001";
+            app.Run($"http://0.0.0.0:{port}");
+        }
+    }
+}
