@@ -7,7 +7,7 @@ namespace BlackOutChatServer
 {
     public class Program
     {
-        record ChatMessage(string user, string text, string clientId, long Timestamp, long ExpiresAt);
+        record ChatMessage(string type, string user, string ciphertext, string iv, string clientId, long Timestamp, long ExpiresAt);
 
         public static void Main(string[] args)
         {
@@ -31,7 +31,7 @@ namespace BlackOutChatServer
                 clients.Add(webSocket);
                 Console.WriteLine("Client connected");
 
-                var buffer = new byte[1024 * 4];
+                var buffer = new byte[1024 * 8];
 
                 try
                 {
@@ -58,15 +58,17 @@ namespace BlackOutChatServer
                         }
 
                         var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        //Console.WriteLine($"Received: {message}");
+                        Console.WriteLine($"Received: {message}");
 
                         var incoming = JsonSerializer.Deserialize<ChatMessage>(message);
 
                         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                         var msg = new ChatMessage(
+                            type: incoming.type,
                             user: incoming!.user,
                             clientId: incoming.clientId,
-                            text: incoming.text,
+                            ciphertext: incoming.ciphertext,
+                            iv: incoming.iv,
                             Timestamp: nowMs,
                             ExpiresAt: nowMs + 15000
                         );
